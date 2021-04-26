@@ -1,7 +1,7 @@
 # RPI_PxE_Flash_SD
 Instructions for Building an SD Card .Img for flashing the RPI to a PxE-bootable state
 
-Current Version for Download: http://3.85.9.172/rpi-pxe-setup-1.0.1.zip
+Current Version for Download: http://3.85.9.172/rpi-pxe-setup-1.1.0.zip
 
 ### 1.) Download RPi OS
 
