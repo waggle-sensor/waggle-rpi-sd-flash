@@ -3,6 +3,11 @@ Instructions for Building an SD Card .Img for flashing the RPI to a PxE-bootable
 
 Current Version for Download: http://3.85.9.172/rpi-pxe-setup-1.1.0.zip
 
+Changes:
+
+        1. Fixed bug that would set bootconf even if already set.   
+        2. Added in BME 680 Sensor support.   
+
 ### 1.) Download RPi OS
 
 ``` bash
