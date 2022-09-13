@@ -1,6 +1,8 @@
 # RPI_PxE_Flash_SD
 Instructions for Building an SD Card .Img for flashing the RPI to a PxE-bootable state. The image produced here is used to PxE boot the OS produced by [waggle-rpi-pxeboot](https://github.com/waggle-sensor/waggle-rpi-pxeboot).
 
+> The resulting SD card image can be flashed using the factory tools found at [surya-tools](https://github.com/waggle-sensor/surya-tools).
+
 Current Version for Download: http://3.85.9.172/rpi-pxe-setup-1.1.0.zip
 
 Changes:
