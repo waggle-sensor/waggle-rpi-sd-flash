@@ -1,100 +1,106 @@
-# RPI_PxE_Flash_SD
-Instructions for Building an SD Card .Img for flashing the RPI to a PxE-bootable state. The image produced here is used to PxE boot the OS produced by [waggle-rpi-pxeboot](https://github.com/waggle-sensor/waggle-rpi-pxeboot).
+# Waggle RPi SD Flash
 
-> The resulting SD card image can be flashed using the factory tools found at [surya-tools](https://github.com/waggle-sensor/surya-tools).
+Creates a compressed RPi SD card image file that is flashed during the manufacturing process of the [Waggle nodes](https://github.com/waggle-sensor/node-platforms). This image configures the RPi for PxE booting the [Waggle RPi PxE Boot OS](https://github.com/waggle-sensor/waggle-rpi-pxeboot)
 
-Current Version for Download: https://github.com/waggle-sensor/RPI_PxE_Flash_SD/releases/download/v1.1.0/rpi-pxe-setup-1.1.0.zip
+The instructions below demonstrate how to [use the build pipeline to produce the compressed SD image file](#usage-how-to-build-the-sd-card-image-file) in addition the [technical details to how to make updates to use a different bootloader firmware version](#technical-details).
 
-Changes:
+The following reference documentation may be useful for understanding the details of this build pipeline:
+- [Rasbperry Pi 4 Boot EEPROM Documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-4-boot-eeprom)
+- [Firmware Boot Configuration](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#configuration-properties)
+- [Firmware EEPROM File Details](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#eeprom-update-files)
 
-        1. Fixed bug that would set bootconf even if already set.   
-        2. Added in BME 680 Sensor support.   
+## Usage (how to build the SD card image file)
 
-### 1.) Download RPi OS
+To build the compressed SD card image file simply run the following:
 
-``` bash
-wget https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2021-03-25/2021-03-04-raspios-buster-armhf-lite.zip
+```
+./build.sh
 ```
 
-### 2.) Mount the /boot partition of the .img file onto machine
+This will produce a versioned image file (ex. `waggle-rpi-sdflash_1.2.0-gbe33a45.img.xz`) that can be directly flashed to the SD card (using the [Raspberry Pi Flashing Tool](https://www.raspberrypi.com/software/))
 
-(This is the first partition of the sd-card, so mounting the sd-card will mount this partition)
+![](_images/01_rpi_flasher_01.png)
 
-### 3.) Make modifications to limit size of .img file
+Then the SD card image can be inserted into a RPi and the RPi powered on.  During first boot the system will be auto-configured to net PxE boot.
 
-Remove the following line from the /boot/cmdline.txt file:
-``` bash
-init=/usr/lib/raspi-config/init_resize.sh
-```
+## Technical Details
 
-This change will not allow the .img file to consume the remaining space on the SD card.
+> You can read these technical details if you are interested in how the build pipeline works or if you need to make a change. Otherwise, just following the ['Usage' instructions](#usage-how-to-build-the-sd-card-image-file) above and flashing the resulting image file should be sufficient.
 
-### 4.) Make changes after booting an RPi with SD card
+During the build process the target base RPi image file (latest [`buster`](https://www.debian.org/releases/buster/) to enable non-interactive first boot) is downloaded into the Docker image. Then the `release.sh` script mounts the image `boot` and `root` partitions to enable customization. At this point the contents of the `ROOTFS` folder is copied to the `root` partition and the `BOOTFS` folder to the `boot` partition.
 
-Boot an RPi with the SD card and make any necessary changes to the image including placing necessary applications for example the rpi-eeprom updater.
+The `apply-waggle-bootfw.sh` script is executed in a [`chroot`'d](https://man7.org/linux/man-pages/man2/chroot.2.html) environment on the image `root` partition. This script then uses the `rpi-eeprom` tools to create the Waggle customized (from the `bootconf.txt` file) EEPROM update files which are based on the target RPi EEPROM base file.  These customized EEPROM files (`pieeprom.upd` and `pieeprom.sig`) are then copied to the images `boot` partition.
 
-### 5.) Shut down RPi and remove SD Card, place back into machine that is creating the image.
+The image is unmounted, compressed, and then exported to the `output` directory.
 
-### 6.) Find necessary information about image on SD Card
+On first boot of the SD card containing the produced image the RPi EEPROM identifies the presence of the `pieeprom.upd` file (and related `.sig` and `recovery.bin` files) and automatically performs the EEPROM update to the Waggle customized EEPROM, enabling net PxE boot.
 
-``` bash
-$ sudo fdisk /dev/disk2
-Disk: /dev/disk2  geometry: 15567/255/63 [250085376]
-Signature: 0xAA55
-Starting       Ending
-#: id  cyl  hd sec -  cyl  hd sec [start -       size]
------------------------------------------------------------
-1: 0C    0 130   3 -    5 249  31 [ 8192 -      87851] Win95 FAT32L
-2: 83    6  30  25 -  219  68  41 [98304 -    3424256] Linux files*
-3: 00    0   0   0 -    0   0   0 [    0 -          0]     
-4: 00    0   0   0 -    0   0   0 [    0 -          0]
-```
+## Making Updates to Boot Configuration
 
-We care about the size and start of the linux files sector (partition 2), adding these together gives us the size to copy from the SD-Card to minimize the image.   
+Specific versions of the RPi base image, `rpi-eeprom` tool and FW, and base `default` bootloader firmware are specified throughout the code pipeline on purpose.  **We do NOT want to specify "latest" to ensure comppatibility.** With that said, the below outlines some details on how to update some of the specifics regarding the bootloader configuration.
 
-In this example we have 3424256 + 98304 = 3522560, then we add another to make sure we've got everything on this sd-card making it 3522561 blocks to copy.   
+> **IMPORTANT: changes to the EEPROM version may have dependency on the NFS mounted bootloader files specified by the [Waggle RPi PxE Boot OS](https://github.com/waggle-sensor/waggle-rpi-pxeboot) repository. So, take caution before changing the base EEPROM version.**
 
-We also need the bs(block size of our sd card) which can be found with
+> RPi base image is specified in the `Dockerfile`
 
-```bash
-$ diskutil info disk2
-Device Identifier:        disk2
-Device Node:              /dev/disk2
-Whole:                    Yes
-Part of Whole:            disk2
-Device / Media Name:      SD Card Reader
-Volume Name:              Not applicable (no file system)
-Mounted:                  Not applicable (no file system)
-File System:              None
-Content (IOContent):      FDisk_partition_scheme
-OS Can Be Installed:      No
-Media Type:               Generic
-Protocol:                 USB
-SMART Status:             Not Supported
-Disk Size:                128.0 GB (128043712512 Bytes) (exactly 250085376 512-Byte-Units)
-Device Block Size:        **512 Bytes**
-Read-Only Media:          No
-Read-Only Volume:         Not applicable (no file system)
-Device Location:          Internal
-Removable Media:          Removable
-Media Removal:            Software-Activated
-Virtual:                  No
-```
+> `rpi-eeprom` and base `default` bootloader firmware are defined in the `apply-waggle-bootfw.sh` script
 
-The highlighted section shows our bs to be 512 bytes.
+To launch an "interactive" Docker instance that enables inspection of the base RPi image file you can use the following steps
 
-### 7.) Copy exactly the size of the used space on the sd-card to our img file
+1. Execute `./boot.sh -a`
 
-``` bash
-sudo dd if=/dev/disk2 of=image.img bs=512 count=3522561
-```
+    This will pause the build pipeline right after the image `boot` and `root` partitions are mounted.
+    ```
+    # ./build.sh -a
+    == Mount RPI Filesystem
+    add map loop3p1 (253:6): 0 524288 linear 7:3 8192
+    add map loop3p2 (253:7): 0 3170304 linear 7:3 532480
+    Build is paused. Image mounted @ bootmnt & rootmnt. Press enter to continue...
+    ```
 
-### 8.) Compressing our .img file
+2. In another terminal, execute a `docker exec` command to get `bash` shell instance into the paused container from the above step
 
-``` bash
-zip -r image.zip image.img
-```
+    ```
+    $ docker exec -it $(docker ps -f "ancestor=pi_sdflash" -q) /bin/bash
+    root@f64eb2f36ba4:/# ls /bootmnt/ /rootmnt/
+    /bootmnt/:
+    COPYING.linux           bcm2710-rpi-2-b.dtb       bootcode.bin  fixup_db.dat  start4.elf
+    LICENCE.broadcom        bcm2710-rpi-3-b-plus.dtb  cmdline.txt   fixup_x.dat   start4cd.elf
+    bcm2708-rpi-b-plus.dtb  bcm2710-rpi-3-b.dtb       config.txt    issue.txt     start4db.elf
+    bcm2708-rpi-b-rev1.dtb  bcm2710-rpi-cm3.dtb       fixup.dat     kernel.img    start4x.elf
+    bcm2708-rpi-b.dtb       bcm2710-rpi-zero-2-w.dtb  fixup4.dat    kernel7.img   start_cd.elf
+    bcm2708-rpi-cm.dtb      bcm2710-rpi-zero-2.dtb    fixup4cd.dat  kernel7l.img  start_db.elf
+    bcm2708-rpi-zero-w.dtb  bcm2711-rpi-4-b.dtb       fixup4db.dat  kernel8.img   start_x.elf
+    bcm2708-rpi-zero.dtb    bcm2711-rpi-400.dtb       fixup4x.dat   overlays
+    bcm2709-rpi-2-b.dtb     bcm2711-rpi-cm4.dtb       fixup_cd.dat  start.elf
 
-### Reference Files
-https://samdecrock.medium.com/building-your-custom-raspbian-image-8b54a24f814e
+    /rootmnt/:
+    bin   dev  home  lost+found  mnt  proc  run   srv  tmp  var
+    boot  etc  lib   media       opt  root  sbin  sys  usr
+    ```
 
+    From here you can inspect and perform actions on the `boot` (`/bootmnt`) and `root` (`/rootmnt`) partitions. Reference the `./release.sh` script for details. For example the possible base EEPROM files in the base image (before updating `rpi-eeprom`) are stored in `ls /rootmnt/usr/lib/firmware/raspberrypi/bootloader/`
+
+3. When you are done you should exit the `docker exec` instance (to ensure the mounted partitions are not in use) and then press `ctrl-c` within the "paused" build pipeline.  This will unmount the image partitions and exit the paused build pipeline.
+
+    > It is **important** to release the mounts as they use [loop devices](https://www.man7.org/linux/man-pages/man8/losetup.8.html) on your host machine.
+
+### BOOTFS `cmdline.txt`
+
+The `cmdline.txt` file outlines the kernel command line options when booting from the backup SD card image.  See the [waggle-rpi-pxeboot](https://github.com/waggle-sensor/waggle-rpi-pxeboot/tree/main/ROOTFS/media/rpi/sage-utils/dhcp-pxe/tftp) repository for the details on the kernel `cmdline.txt` file that is used during normal PxE boot.
+
+The `cmdline.txt` file that is here is based on the base RPI `buster` image used to make the customized SD card flash image. You can follow the above instructions to inspect the base images `/bootmnt/cmdline.txt` file.
+
+### ROOTFS `bootconf.txt`
+
+The `bootconf.txt` file specifies the EEPROM boot options and is what instructs the EEPROM to attempt a net PxE boot as it's priority boot option.  The `bootconf.txt` file doesn't do anything itself, but must be combined with a EEPROM file using the `rpi-eeprom` tools.
+
+You can reference the `apply-waggle-bootfw.sh` script for how this is used to create the Waggle specific EEPROM files.
+
+### Updated to a new EEPROM version
+
+> **The base EEPROM version should ONLY be changed if new features or hardware support is required.**  There is a dependency with the NFS mounted bootloader files specified by the [Waggle RPi PxE Boot OS](https://github.com/waggle-sensor/waggle-rpi-pxeboot). Any changes in the version here may require a corresponding change to the [Waggle RPi PxE Boot OS](https://github.com/waggle-sensor/waggle-rpi-pxeboot)
+
+The version of the base EEPROM is specified by the `apply-waggle-bootfw.sh` script and you can reference the [RPi Bootloader Release Folder Documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#bootloader-release) for an explanation of the different release channels. The `default` release channel should be used as it contains the most stable and trusted EEPROM releases.
+
+In order to get access to newer EEPROM releases you will need a newer version of the `rpi-eeprom` tool, which is also specified by the `apply-waggle-bootfw.sh` script.
