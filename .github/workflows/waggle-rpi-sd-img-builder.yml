@@ -1,0 +1,28 @@
+name: Waggle RPI SD Card Image Builder CI
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["*"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build_image:
+    name: Build Image
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: setup environment
+        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Build SD Image
+        run: ./build.sh
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: output/*
